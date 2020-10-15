@@ -125,7 +125,7 @@ void ASkeleton::clear()
 void ASkeleton::update()
 {
 	if (!mRoot) return; // Nothing loaded
-
+	mRoot->updateTransform();
 	// TODO: Update Joint Transforms recursively, starting at the root
 
 }

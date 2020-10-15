@@ -212,8 +212,20 @@ const mat3& AJoint::getGlobalRotation() const
 void AJoint::updateTransform()
 {
 	// TODO: Compute mLocal2Global, which transforms from local coordinates to world coordinates
-	mLocal2Global = ATransform();
+	if (mParent == NULL)
+	{
+		mLocal2Global = mLocal2Parent;
+	}
+	else
+	{
+		mLocal2Global = mParent->mLocal2Global * mLocal2Parent;
+	}
+	
 	// TODO: Update children
+	for (int i = 0; i < mChildren.size(); i++)
+	{
+		this->mChildren[i]->updateTransform();
+	}
 }
 
 void AJoint::Attach(AJoint* pParent, AJoint* pChild)
