@@ -3,6 +3,8 @@
 
 #pragma warning (disable : 4018)
 
+using namespace std;
+
 int IKController::gIKmaxIterations = 5;
 double IKController::gIKEpsilon = 0.1;
 
@@ -133,7 +135,26 @@ AIKchain IKController::createIKchain(int endJointID, int desiredChainSize, ASkel
 	// add the corresponding skeleton joint pointers to the AIKChain "chain" data member starting with the end joint
 	// desiredChainSize = -1 should create an IK chain of maximum length (where the last chain joint is the joint before the root joint)
 	// also add weight values to the associated AIKChain "weights" data member which can be used in a CCD IK implemention
-	return AIKchain();
+
+	vector<AJoint*> IKChain;
+	vector<double> weights;
+
+	if (endJointID >= 0 && endJointID < pSkeleton->getNumJoints()) {
+		AJoint* iterator = pSkeleton->getJointByID(endJointID)->getParent();
+		int count = 0;
+		do {
+			IKChain.push_back(iterator);
+			weights.push_back(mWeight0);
+			iterator = iterator->getParent();
+			count += 1;
+		} while (iterator != pSkeleton->getRootNode() || count == desiredChainSize);
+	}
+
+	AIKchain result;
+	result.setChain(IKChain);
+	result.setWeights(weights);
+
+	return result;
 }
 
 
@@ -234,6 +255,33 @@ int IKController::computeLimbIK(ATarget target, AIKchain& IKchain, const vec3 mi
 	// TODO: Implement the analytic/geometric IK method assuming a three joint limb  
 	// The actual position of the end joint should match the target position within some episilon error 
 	// the variable "midJointAxis" contains the rotation axis for the middle joint
+
+
+	//TODO: do some check
+
+	m_pEndJoint = IKchain.getJoint(0);
+	m_pMiddleJoint = IKchain.getJoint(1);
+	m_pBaseJoint = IKchain.getJoint(2);
+
+	vec3 error = target.getGlobalTranslation() - m_pEndJoint->getGlobalTranslation();
+	vec3 r0 = m_pEndJoint->getGlobalTranslation() - m_pBaseJoint->getGlobalTranslation();
+	vec3 rd = target.getGlobalTranslation() - m_pBaseJoint->getGlobalTranslation();
+	double l1 = (m_pMiddleJoint->getGlobalTranslation() - m_pBaseJoint->getGlobalTranslation()).Length();
+	double l2 = (m_pEndJoint->getGlobalTranslation() - m_pMiddleJoint->getGlobalTranslation()).Length();
+	double rd_length = rd.Length();
+	double cosin = (l1 * l2 + l2 * l2 - rd_length * rd_length) / (2 * l1 * l2);
+	
+	double phi = acos(cosin);
+	double theta2 = M_PI - phi;
+
+	double angle = acos((r0 * rd) / (r0.Length() * rd_length));
+	vec3 axis = r0.Cross(rd);
+	vec3 local_axis = ((m_pBaseJoint->getLocal2Global()).Inverse()) * axis;
+	mat3 transform;
+	transform.FromAxisAngle(local_axis, angle);
+	m_pBaseJoint->setLocalRotation(m_pBaseJoint->getLocalRotation() * transform);
+	m_pBaseJoint->updateTransform();
+
 	return true;
 }
 
@@ -342,6 +390,44 @@ int IKController::computeCCDIK(ATarget target, AIKchain& IKchain, ASkeleton* pIK
 	// 3. compute desired change to local rotation matrix
 	// 4. set local rotation matrix to new value
 	// 5. update transforms for joint and all children
+
+	vec3 pd = target.getGlobalTranslation();
+	double error_length = INFINITY;
+	int num_iterations = 0;
+	
+	m_pEndJoint = IKchain.getJoint(0);
+	m_pBaseJoint = IKchain.getJoint(IKchain.getSize() - 1);
+	pIKSkeleton->copyTransforms(m_pSkeleton);
+
+	while (error_length > gIKEpsilon && num_iterations < gIKmaxIterations) {
+		AJoint* iterator = m_pEndJoint->getParent();
+		
+		int count = 0;
+		while (iterator != pIKSkeleton->getRootNode()) {
+
+			vec3 rd = pd - iterator->getGlobalTranslation();
+			vec3 error = pd - m_pEndJoint->getGlobalTranslation();
+			vec3 axis = rd.Cross(error)/ rd.Cross(error).Length();
+			double angle = IKchain.getWeight(count) * (rd.Cross(error).Length()) / (rd * rd + rd * error);
+			
+			vec3 local_axis = iterator->getLocal2Global().Inverse() * axis;
+
+			mat3 transform;
+			transform.FromAxisAngle(local_axis, angle);
+			iterator->setLocalRotation(iterator->getLocalRotation() * transform);
+
+
+			iterator->updateTransform();
+			iterator = iterator->getParent();
+			count += 1;
+
+		}
+
+		error_length = (pd - m_pEndJoint->getGlobalTranslation()).Length();
+		num_iterations += 1;
+
+	}
+
 	return true;
 }
 
