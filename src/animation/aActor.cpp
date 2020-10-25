@@ -97,6 +97,31 @@ IKController* AActor::getIKController()
 	return m_IKController;
 }
 
+mat3 rotateAlign(vec3 u1, vec3 u2)
+{
+	vec3 axis = u1.Cross(u2);
+	float dotProduct = u1 * u2;
+
+	float angleRadians = acosf(dotProduct);
+
+	const float sinA = sinf(angleRadians);
+	const float cosA = cosf(angleRadians);
+	const float invCosA = 1.0f - cosA;
+
+	mat3 result( vec3((axis[0] * axis[0] * invCosA) + cosA,
+		(axis[1] * axis[0] * invCosA) - (sinA * axis[2]),
+		(axis[2] * axis[0] * invCosA) + (sinA * axis[1])),
+		vec3((axis[0] * axis[1] * invCosA) + (sinA * axis[2]),
+		(axis[1] * axis[1] * invCosA) + cosA,
+		(axis[2] * axis[1] * invCosA) - (sinA * axis[0])),
+		vec3((axis[0] * axis[2] * invCosA) - (sinA * axis[1]),
+		(axis[1] * axis[2] * invCosA) + (sinA * axis[0]),
+		(axis[2] * axis[2] * invCosA) + cosA)
+	);
+
+	return result;
+}
+
 void AActor::updateGuideJoint(vec3 guideTargetPos)
 {
 	if (!m_pSkeleton->getRootNode()) { return; }
@@ -113,14 +138,10 @@ void AActor::updateGuideJoint(vec3 guideTargetPos)
 	// 3.	Set the global rotation of the guide joint towards the guideTarget
 
 	vec3 rd = m_Guide.getGlobalTranslation();
-	vec3 t = guideTargetPos;
-	vec3 axis = m_Guide.getGlobalTranslation().Cross(guideTargetPos);
-	double angle = acos((rd * t) / (rd.Length() * t.Length()));
-	vec3 localAxis = m_Guide.getLocal2Global().Inverse() * axis;
-	mat3 transform;
-	transform.FromAxisAngle(localAxis, angle);
-	m_Guide.setLocalRotation(m_Guide.getLocalRotation() * transform);
+
+	m_Guide.setLocalRotation(m_Guide.getLocalRotation() * rotateAlign(rd, guideTargetPos));
 	m_Guide.updateTransform();
+	m_pSkeleton->update();
 	
 }
 
@@ -129,12 +150,13 @@ void AActor::solveFootIK(float leftHeight, float rightHeight, bool rotateLeft, b
 	if (!m_pSkeleton->getRootNode()) { return; }
 	AJoint* leftFoot = m_pSkeleton->getJointByID(m_IKController->mLfootID);
 	AJoint* rightFoot = m_pSkeleton->getJointByID(m_IKController->mRfootID);
+	AJoint* root = m_pSkeleton->getRootNode();
 
 	// TODO: 
 	// The normal and the height given are in the world space
 
 	// 1.	Update the local translation of the root based on the left height and the right height
-
+	m_pSkeleton->getRootNode()->setLocalTranslation(Max(leftHeight, rightHeight));
 	m_pSkeleton->update();
 
 	// 2.	Update the character with Limb-based IK 
@@ -143,6 +165,12 @@ void AActor::solveFootIK(float leftHeight, float rightHeight, bool rotateLeft, b
 	if (rotateLeft)
 	{
 		// Update the local orientation of the left foot based on the left normal
+		mat3 transform = root->getLocalRotation();
+		transform[2] = leftNormal;
+		root->setLocalRotation(root->getLocalRotation() * transform);
+		root->updateTransform();
+		
+		
 		;
 	}
 	if (rotateRight)
