@@ -103,8 +103,25 @@ void AActor::updateGuideJoint(vec3 guideTargetPos)
 
 	// TODO: 
 	// 1.	Set the global position of the guide joint to the global position of the root joint
+	
+	vec3 trans = m_pSkeleton->getRootNode()->getGlobalTranslation()  ;
+	trans[2] = 0;
+	m_Guide.setGlobalTranslation(trans);
+	
 	// 2.	Set the y component of the guide position to 0
+	
 	// 3.	Set the global rotation of the guide joint towards the guideTarget
+
+	vec3 rd = m_Guide.getGlobalTranslation();
+	vec3 t = guideTargetPos;
+	vec3 axis = m_Guide.getGlobalTranslation().Cross(guideTargetPos);
+	double angle = acos((rd * t) / (rd.Length() * t.Length()));
+	vec3 localAxis = m_Guide.getLocal2Global().Inverse() * axis;
+	mat3 transform;
+	transform.FromAxisAngle(localAxis, angle);
+	m_Guide.setLocalRotation(m_Guide.getLocalRotation() * transform);
+	m_Guide.updateTransform();
+	
 }
 
 void AActor::solveFootIK(float leftHeight, float rightHeight, bool rotateLeft, bool rotateRight, vec3 leftNormal, vec3 rightNormal)
